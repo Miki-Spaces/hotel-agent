@@ -27,11 +27,11 @@ API Backend สำหรับระบบจองโรงแรมและ A
     redoc_url="/redoc"
 )
 
-# Enable CORS for frontend clients (HTML/React on localhost:3000, 5173, etc.)
+# Allow browser requests only from configured frontend origins.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=settings.FRONTEND_ALLOWED_ORIGINS,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

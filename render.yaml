@@ -17,3 +17,9 @@ services:
         sync: false
       - key: VOICE_BOT_API_KEY
         sync: false
+      - key: BOTNOI_ACCESS_TOKEN
+        sync: false
+      - key: BOTNOI_AGENT_ID
+        sync: false
+      - key: FRONTEND_ALLOWED_ORIGINS
+        sync: false

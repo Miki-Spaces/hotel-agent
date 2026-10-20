@@ -1,18 +1,28 @@
 from datetime import date
+from collections import defaultdict, deque
+from threading import Lock
+from time import monotonic
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Header, status
+import httpx
+from fastapi import APIRouter, HTTPException, Header, Request, status
 from app.schemas import (
     VoiceCheckRoomsRequest,
     VoiceCheckRoomsResponse,
     VoiceBookRoomRequest,
     VoiceBookRoomResponse,
     VoiceSaveLogRequest,
-    VoiceSaveLogResponse
+    VoiceSaveLogResponse,
+    VoiceCallTokenResponse
 )
 from app.config import settings
 from app.database import db
 
 router = APIRouter(prefix="/api/voice", tags=["AI Voice Bot Webhook"])
+
+_CALL_TOKEN_WINDOW_SECONDS = 60
+_CALL_TOKEN_LIMIT = 5
+_call_token_requests: dict[str, deque[float]] = defaultdict(deque)
+_call_token_lock = Lock()
 
 def verify_voice_api_key(x_api_key: Optional[str] = Header(None)):
     """Optional validation of Voice Bot API Key for secure webhook communication."""
@@ -21,6 +31,75 @@ def verify_voice_api_key(x_api_key: Optional[str] = Header(None)):
         if x_api_key != expected_key:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Voice Bot API Key")
     return True
+
+@router.post("/call-token", response_model=VoiceCallTokenResponse)
+async def create_call_token(request: Request):
+    """Issue one short-lived browser token without exposing the Botnoi access token."""
+    origin = request.headers.get("origin", "").rstrip("/")
+    if not origin or origin not in settings.FRONTEND_ALLOWED_ORIGINS:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This website is not allowed to start voice calls.",
+        )
+
+    if not settings.BOTNOI_ACCESS_TOKEN or not settings.BOTNOI_AGENT_ID:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Voice bot is not configured on the server.",
+        )
+
+    client_ip = request.client.host if request.client else "unknown"
+    now = monotonic()
+    with _call_token_lock:
+        requests = _call_token_requests[client_ip]
+        while requests and now - requests[0] >= _CALL_TOKEN_WINDOW_SECONDS:
+            requests.popleft()
+        if len(requests) >= _CALL_TOKEN_LIMIT:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many voice call attempts. Please wait and try again.",
+                headers={"Retry-After": str(_CALL_TOKEN_WINDOW_SECONDS)},
+            )
+        requests.append(now)
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                "https://backend-voicebot-stg.botnoigroup.com/call/tokens",
+                headers={
+                    "Authorization": f"Bearer {settings.BOTNOI_ACCESS_TOKEN}",
+                    "Content-Type": "application/json",
+                },
+                json={"agent_id": settings.BOTNOI_AGENT_ID, "channel": "web"},
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not reach the voice service. Please try again.",
+        ) from exc
+
+    if response.is_error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The voice service could not issue a call token.",
+        )
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The voice service returned an invalid response.",
+        ) from exc
+
+    ephemeral_token = payload.get("ephemeral_token") if isinstance(payload, dict) else None
+    if not isinstance(ephemeral_token, str) or not ephemeral_token:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The voice service returned no call token.",
+        )
+
+    return {"ephemeral_token": ephemeral_token}
 
 @router.post("/check-rooms", response_model=VoiceCheckRoomsResponse)
 def voice_check_rooms(req: VoiceCheckRoomsRequest):

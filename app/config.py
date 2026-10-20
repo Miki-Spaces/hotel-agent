@@ -14,6 +14,16 @@ class Settings:
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "8000"))
     VOICE_BOT_API_KEY: str = os.getenv("VOICE_BOT_API_KEY", "botnoi-hotel-agent-secret-key-2026")
+    BOTNOI_ACCESS_TOKEN: str = os.getenv("BOTNOI_ACCESS_TOKEN", "").strip()
+    BOTNOI_AGENT_ID: str = os.getenv("BOTNOI_AGENT_ID", "").strip()
+    FRONTEND_ALLOWED_ORIGINS: list[str] = [
+        origin.strip().rstrip("/")
+        for origin in os.getenv(
+            "FRONTEND_ALLOWED_ORIGINS",
+            "http://localhost:3000,http://localhost:5173",
+        ).split(",")
+        if origin.strip()
+    ]
 
     @property
     def has_supabase_config(self) -> bool:

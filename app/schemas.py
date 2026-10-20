@@ -177,6 +177,9 @@ class VoiceSaveLogResponse(BaseModel):
     log_id: Optional[str] = None
     message: str = "Voice log saved successfully"
 
+class VoiceCallTokenResponse(BaseModel):
+    ephemeral_token: str
+
 # Generic Success/Message Response
 class SimpleMessageResponse(BaseModel):
     success: bool
