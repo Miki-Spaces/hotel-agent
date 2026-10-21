@@ -18,9 +18,9 @@ class Settings:
     BOTNOI_AGENT_ID: str = os.getenv("BOTNOI_AGENT_ID", "").strip()
     FRONTEND_ALLOWED_ORIGINS: list[str] = [
         origin.strip().rstrip("/")
-        for origin in os.getenv(
-            "FRONTEND_ALLOWED_ORIGINS",
-            "http://localhost:3000,http://localhost:5173",
+        for origin in (
+            os.getenv("FRONTEND_ALLOWED_ORIGINS", "").strip()
+            or "http://localhost:3000,http://localhost:3001,http://localhost:5173"
         ).split(",")
         if origin.strip()
     ]

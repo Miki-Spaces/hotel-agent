@@ -2,7 +2,7 @@ from datetime import date
 from collections import defaultdict, deque
 from threading import Lock
 from time import monotonic
-from typing import Optional
+from typing import Any, Dict, List, Optional
 import httpx
 from fastapi import APIRouter, HTTPException, Header, Request, status
 from app.schemas import (
@@ -109,6 +109,8 @@ def voice_check_rooms(req: VoiceCheckRoomsRequest):
     if req.check_out <= req.check_in:
         return {
             "available": False,
+            "rooms": [],
+            "available_rooms_count": 0,
             "speech_text": "ขออภัยค่ะ วันเช็คเอาต์ต้องอยู่หลังวันเช็คอิน รบกวนแจ้งวันที่ใหม่อีกครั้งได้ไหมคะ"
         }
 
@@ -117,34 +119,60 @@ def voice_check_rooms(req: VoiceCheckRoomsRequest):
         if not available_rooms:
             return {
                 "available": False,
+                "rooms": [],
                 "available_rooms_count": 0,
                 "speech_text": f"ขออภัยค่ะ ในช่วงวันที่ {req.check_in} ถึง {req.check_out} ห้องพักสำหรับ {req.guests} ท่าน เต็มหมดแล้วค่ะ ต้องการให้ดูวันอื่นเพิ่มเติมไหมคะ"
             }
 
-        # Select best matching/lowest price room
-        best = available_rooms[0]
-        nights = best["total_nights"]
-        price_total = best["total_estimated_price"]
-        room_name = best["room_type_name"]
+        room_types_by_name: Dict[str, List[Dict[str, Any]]] = {}
+        for room_type in db.get_room_types():
+            room_types_by_name.setdefault(room_type["name"], []).append(room_type)
 
-        speech = (
-            f"มีห้อง {room_name} ว่างค่ะ พักได้ {best['max_guests']} ท่าน "
-            f"รวม {nights} คืน ยอดสุทธิ {price_total:,.0f} บาท ต้องการให้จองเลยไหมคะ"
-        )
+        options_by_type: Dict[str, Dict[str, Any]] = {}
+        for room in available_rooms:
+            room_type_name = room["room_type_name"]
+            room_type_id = room.get("room_type_id")
+            if not room_type_id:
+                matching_types = room_types_by_name.get(room_type_name, [])
+                if len(matching_types) == 1:
+                    room_type_id = matching_types[0]["id"]
+
+            if not room_type_id:
+                raise ValueError(f"Missing room_type_id for {room_type_name}")
+
+            option = options_by_type.setdefault(room_type_id, {
+                "room_type_id": room_type_id,
+                "room_type": room_type_name,
+                "max_guests": room["max_guests"],
+                "price_per_night": room["price_per_night"],
+                "total_nights": room["total_nights"],
+                "total_price": room["total_estimated_price"],
+                "available_rooms_count": 0,
+            })
+            option["available_rooms_count"] += 1
+
+        room_options = list(options_by_type.values())
+        speech_options = [
+            (
+                f"{index}. {option['room_type']} พักได้ไม่เกิน {option['max_guests']} ท่าน "
+                f"คืนละ {option['price_per_night']:,.0f} บาท รวม {option['total_nights']} คืน "
+                f"เป็นเงิน {option['total_price']:,.0f} บาท"
+            )
+            for index, option in enumerate(room_options, start=1)
+        ]
+        speech = "มีห้องว่างให้เลือกค่ะ " + " ".join(speech_options) + " ต้องการเลือกห้องประเภทไหนคะ"
 
         return {
             "available": True,
-            "room_type": room_name,
-            "room_id": best["room_id"],
-            "price_per_night": best["price_per_night"],
-            "total_nights": nights,
-            "total_price": price_total,
+            "rooms": room_options,
             "available_rooms_count": len(available_rooms),
             "speech_text": speech
         }
     except Exception as e:
         return {
             "available": False,
+            "rooms": [],
+            "available_rooms_count": 0,
             "speech_text": "ขออภัยค่ะ ระบบตรวจสอบห้องพักขัดข้องชั่วคราว รบกวนลองใหม่อีกครั้งค่ะ"
         }
 
@@ -155,21 +183,25 @@ def voice_book_room(req: VoiceBookRoomRequest):
     """
     target_room_id = req.room_id
 
-    # If specific room_id not provided, find first available room matching room_type_id or any room
+    # Resolve the selected room type to a physical room only after checking current availability.
     if not target_room_id:
         available = db.check_room_availability(req.check_in, req.check_out, req.guests)
         if req.room_type_id:
             matched = [r for r in available if r.get("room_type_id") == req.room_type_id or r.get("room_type_name") == req.room_type_id]
             if matched:
                 target_room_id = matched[0]["room_id"]
-        if not target_room_id and available:
-            target_room_id = available[0]["room_id"]
+        else:
+            return {
+                "success": False,
+                "speech_text": "กรุณาเลือกประเภทห้องก่อนยืนยันการจองค่ะ",
+                "error": "room_type_id is required when room_id is not provided"
+            }
 
     if not target_room_id:
         return {
             "success": False,
-            "speech_text": "ขออภัยค่ะ ห้องพักเต็มแล้ว ไม่สามารถทำรายการจองได้ในขณะนี้ค่ะ",
-            "error": "No available room"
+            "speech_text": "ขออภัยค่ะ ประเภทห้องที่เลือกไม่มีห้องว่างแล้ว รบกวนตรวจสอบห้องว่างอีกครั้งค่ะ",
+            "error": "No available room for selected room type"
         }
 
     try:

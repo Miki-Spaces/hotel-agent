@@ -204,6 +204,7 @@ class DatabaseService:
                     "room_id": room["id"],
                     "room_number": room["room_number"],
                     "floor": room["floor"],
+                    "room_type_id": rt["id"],
                     "room_type_name": rt["name"],
                     "max_guests": rt["max_guests"],
                     "price_per_night": float(rt["base_price"]),

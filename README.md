@@ -261,15 +261,50 @@ Response:
 ```json
 {
   "available": true,
-  "room_type": "Standard Deluxe Room",
-  "room_id": "r101-0000-0000-0000-000000000101",
-  "price_per_night": 1200.0,
-  "total_nights": 2,
-  "total_price": 2400.0,
-  "available_rooms_count": 4,
-  "speech_text": "มีห้อง Standard Deluxe Room ว่างค่ะ พักได้ 2 ท่าน รวม 2 คืน ยอดสุทธิ 2,400 บาท ต้องการให้จองเลยไหมคะ"
+  "rooms": [
+    {
+      "room_type_id": "d1111111-1111-1111-1111-111111111111",
+      "room_type": "Standard Deluxe Room",
+      "max_guests": 2,
+      "price_per_night": 1200.0,
+      "total_nights": 2,
+      "total_price": 2400.0,
+      "available_rooms_count": 4
+    },
+    {
+      "room_type_id": "d2222222-2222-2222-2222-222222222222",
+      "room_type": "Executive Suite",
+      "max_guests": 2,
+      "price_per_night": 2500.0,
+      "total_nights": 2,
+      "total_price": 5000.0,
+      "available_rooms_count": 3
+    },
+    {
+      "room_type_id": "d3333333-3333-3333-3333-333333333333",
+      "room_type": "Family Grand Suite",
+      "max_guests": 4,
+      "price_per_night": 3800.0,
+      "total_nights": 2,
+      "total_price": 7600.0,
+      "available_rooms_count": 2
+    },
+    {
+      "room_type_id": "d4444444-4444-4444-4444-444444444444",
+      "room_type": "Presidential Penthouse",
+      "max_guests": 6,
+      "price_per_night": 6500.0,
+      "total_nights": 2,
+      "total_price": 13000.0,
+      "available_rooms_count": 1
+    }
+  ],
+  "available_rooms_count": 10,
+  "speech_text": "มีห้องว่างให้เลือกค่ะ 1. Standard Deluxe Room พักได้ไม่เกิน 2 ท่าน คืนละ 1,200 บาท รวม 2 คืน เป็นเงิน 2,400 บาท 2. Executive Suite พักได้ไม่เกิน 2 ท่าน คืนละ 2,500 บาท รวม 2 คืน เป็นเงิน 5,000 บาท 3. Family Grand Suite พักได้ไม่เกิน 4 ท่าน คืนละ 3,800 บาท รวม 2 คืน เป็นเงิน 7,600 บาท 4. Presidential Penthouse พักได้ไม่เกิน 6 ท่าน คืนละ 6,500 บาท รวม 2 คืน เป็นเงิน 13,000 บาท ต้องการเลือกห้องประเภทไหนคะ"
 }
 ```
+
+Each `rooms` item represents one room type, not a physical room. Send the selected `room_type_id` to `POST /api/voice/book-room`; the booking endpoint assigns an available physical room at booking time. The availability function must return `room_type_id`. Apply `migrations/20261021_voice_room_type_availability.sql` to an existing Supabase database before deploying this response change.
 
 #### Book Room via Voice (`POST /api/voice/book-room`)
 Completes reservation during a phone conversation.
@@ -277,6 +312,7 @@ Completes reservation during a phone conversation.
 curl -X POST http://127.0.0.1:8000/api/voice/book-room \
   -H "Content-Type: application/json" \
   -d '{
+    "room_type_id": "d1111111-1111-1111-1111-111111111111",
     "guest_name": "คุณวิชัย ชัยชนะ",
     "guest_phone": "0897654321",
     "check_in": "2026-11-01",

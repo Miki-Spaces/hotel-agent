@@ -136,13 +136,18 @@ class VoiceCheckRoomsRequest(BaseModel):
     check_out: date
     guests: int = Field(default=2, ge=1)
 
+class VoiceAvailableRoomOption(BaseModel):
+    room_type_id: str
+    room_type: str
+    max_guests: int
+    price_per_night: float
+    total_nights: int
+    total_price: float
+    available_rooms_count: int
+
 class VoiceCheckRoomsResponse(BaseModel):
     available: bool
-    room_type: Optional[str] = None
-    room_id: Optional[str] = None
-    price_per_night: Optional[float] = None
-    total_nights: Optional[int] = None
-    total_price: Optional[float] = None
+    rooms: List[VoiceAvailableRoomOption] = Field(default_factory=list)
     available_rooms_count: int = 0
     speech_text: str
 
