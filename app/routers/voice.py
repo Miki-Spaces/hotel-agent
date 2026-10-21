@@ -181,21 +181,36 @@ def voice_book_room(req: VoiceBookRoomRequest):
     """
     ยืนยันการจองผ่าน AI Voice Bot และออกรหัสการจอง (HTL-XXXX)
     """
-    target_room_id = req.room_id
+    if req.check_out <= req.check_in:
+        return {
+            "success": False,
+            "speech_text": "วันเช็คเอาต์ต้องอยู่หลังวันเช็คอิน กรุณาตรวจสอบวันที่เข้าพักอีกครั้งค่ะ",
+            "error": "check_out must be after check_in"
+        }
 
-    # Resolve the selected room type to a physical room only after checking current availability.
-    if not target_room_id:
+    target_room_id = None
+
+    # A selected room type is authoritative; room_id is only a legacy fallback.
+    if req.room_type_id:
         available = db.check_room_availability(req.check_in, req.check_out, req.guests)
-        if req.room_type_id:
-            matched = [r for r in available if r.get("room_type_id") == req.room_type_id or r.get("room_type_name") == req.room_type_id]
-            if matched:
-                target_room_id = matched[0]["room_id"]
-        else:
-            return {
-                "success": False,
-                "speech_text": "กรุณาเลือกประเภทห้องก่อนยืนยันการจองค่ะ",
-                "error": "room_type_id is required when room_id is not provided"
-            }
+        matched = [r for r in available if r.get("room_type_id") == req.room_type_id or r.get("room_type_name") == req.room_type_id]
+        if not matched:
+            selected_type = next(
+                (item for item in db.get_room_types() if item.get("id") == req.room_type_id),
+                None,
+            )
+            if selected_type:
+                matched = [r for r in available if r.get("room_type_name") == selected_type.get("name")]
+        if matched:
+            target_room_id = matched[0]["room_id"]
+    elif req.room_id:
+        target_room_id = req.room_id
+    else:
+        return {
+            "success": False,
+            "speech_text": "กรุณาเลือกประเภทห้องก่อนยืนยันการจองค่ะ",
+            "error": "room_type_id is required when room_id is not provided"
+        }
 
     if not target_room_id:
         return {
