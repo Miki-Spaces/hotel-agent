@@ -79,6 +79,7 @@ class CreateBookingRequest(BaseModel):
     check_in_date: date
     check_out_date: date
     num_guests: int = Field(default=1, ge=1)
+    booking_channel: Literal["voice_bot", "web"] = "web"  # "voice_bot" when the booking was confirmed by voice on the web page
 
 class AdminWalkInRequest(BaseModel):
     room_id: str
