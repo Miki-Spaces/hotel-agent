@@ -1,3 +1,4 @@
+import re
 import uuid
 import secrets
 from datetime import date, datetime, timezone
@@ -63,6 +64,23 @@ DEFAULT_ROOMS = [
 # ------------------------------------------------------------------------------
 # DATABASE CLIENT WRAPPER (SUPABASE + SEAMLESS IN-MEMORY FALLBACK)
 # ------------------------------------------------------------------------------
+def normalize_booking_code(code: str) -> str:
+    """'htl 9abf92' / 'HTL9ABF92' -> 'HTL-9ABF92' (the stored form)."""
+    compact = re.sub(r"[\s-]", "", code or "").upper()
+    match = re.fullmatch(r"HTL([A-Z0-9]{5,6})", compact)
+    return f"HTL-{match.group(1)}" if match else (code or "").strip().upper()
+
+
+def normalize_phone(phone: str) -> str:
+    """'087-166 2066' / '+66871662066' / '871662066' -> '0871662066'."""
+    digits = re.sub(r"\D", "", phone or "")
+    if digits.startswith("66") and len(digits) == 11:
+        digits = "0" + digits[2:]
+    elif len(digits) == 9 and not digits.startswith("0"):
+        digits = "0" + digits
+    return digits
+
+
 class DatabaseService:
     def __init__(self):
         self.client = None
@@ -430,19 +448,21 @@ class DatabaseService:
         return next((b for b in self._bookings if b["id"] == booking_id), None)
 
     def get_booking_by_code_and_phone(self, booking_code: str, phone: str) -> Optional[Dict[str, Any]]:
-        code_clean = booking_code.strip().upper()
-        phone_clean = phone.strip()
+        # Match on normalized values so formatting differences (dashes, spaces, +66, missing leading 0) don't matter.
+        code_clean = normalize_booking_code(booking_code)
+        phone_clean = normalize_phone(phone)
 
         if self.is_supabase_connected:
             try:
-                res = self.client.table("bookings").select("*, rooms(room_number, floor, room_types(name))").eq("booking_code", code_clean).eq("guest_phone", phone_clean).execute()
-                if res.data:
-                    return self._format_booking_row(res.data[0])
+                res = self.client.table("bookings").select("*, rooms(room_number, floor, room_types(name))").eq("booking_code", code_clean).execute()
+                for row in res.data or []:
+                    if normalize_phone(row.get("guest_phone", "")) == phone_clean:
+                        return self._format_booking_row(row)
             except Exception as e:
                 print(f"[DB Error: get_booking_by_code_and_phone] {e}")
 
         for b in self._bookings:
-            if b["booking_code"].upper() == code_clean and b["guest_phone"] == phone_clean:
+            if normalize_booking_code(b["booking_code"]) == code_clean and normalize_phone(b["guest_phone"]) == phone_clean:
                 return b
         return None
 
