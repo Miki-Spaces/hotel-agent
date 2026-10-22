@@ -23,7 +23,7 @@ def create_booking(
             check_out_date=req.check_out_date,
             num_guests=req.num_guests,
             user_id=current_user["id"] if current_user else None,
-            booking_channel=req.booking_channel,
+            booking_channel="web",
             status="confirmed",
             payment_status="pending"
         )
