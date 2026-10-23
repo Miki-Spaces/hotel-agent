@@ -1,4 +1,5 @@
 import os
+import secrets
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -10,10 +11,10 @@ class Settings:
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
     SUPABASE_ANON_KEY: str = os.getenv("SUPABASE_ANON_KEY", "")
     SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-    SUPABASE_JWT_SECRET: str = os.getenv("SUPABASE_JWT_SECRET", "super-secret-jwt-key-hotel-voice-2026")
+    SUPABASE_JWT_SECRET: str = os.getenv("SUPABASE_JWT_SECRET", "").strip() or secrets.token_urlsafe(48)  # unset: random per start, admin sessions reset on restart
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "8000"))
-    VOICE_BOT_API_KEY: str = os.getenv("VOICE_BOT_API_KEY", "botnoi-hotel-agent-secret-key-2026")
+    VOICE_BOT_API_KEY: str = os.getenv("VOICE_BOT_API_KEY", "").strip()  # empty = voice webhooks are open (local dev only)
     BOTNOI_ACCESS_TOKEN: str = os.getenv("BOTNOI_ACCESS_TOKEN", "").strip()
     BOTNOI_AGENT_ID: str = os.getenv("BOTNOI_AGENT_ID", "").strip()
     FRONTEND_ALLOWED_ORIGINS: list[str] = [

@@ -1,10 +1,11 @@
+import hmac
 from datetime import date
 from collections import defaultdict, deque
 from threading import Lock
 from time import monotonic
 from typing import Any, Dict, List, Optional
 import httpx
-from fastapi import APIRouter, HTTPException, Header, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Header, Request, status
 from app.schemas import (
     VoiceCheckRoomsRequest,
     VoiceCheckRoomsResponse,
@@ -25,11 +26,12 @@ _call_token_requests: dict[str, deque[float]] = defaultdict(deque)
 _call_token_lock = Lock()
 
 def verify_voice_api_key(x_api_key: Optional[str] = Header(None)):
-    """Optional validation of Voice Bot API Key for secure webhook communication."""
+    """Require the x-api-key header on Botnoi webhooks when VOICE_BOT_API_KEY is set."""
     expected_key = settings.VOICE_BOT_API_KEY
-    if expected_key and x_api_key:
-        if x_api_key != expected_key:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Voice Bot API Key")
+    if not expected_key:
+        return True  # not configured: open, for local development only
+    if not x_api_key or not hmac.compare_digest(x_api_key.encode(), expected_key.encode()):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or missing Voice Bot API Key")
     return True
 
 @router.post("/call-token", response_model=VoiceCallTokenResponse)
@@ -101,7 +103,7 @@ async def create_call_token(request: Request):
 
     return {"ephemeral_token": ephemeral_token}
 
-@router.post("/check-rooms", response_model=VoiceCheckRoomsResponse)
+@router.post("/check-rooms", response_model=VoiceCheckRoomsResponse, dependencies=[Depends(verify_voice_api_key)])
 def voice_check_rooms(req: VoiceCheckRoomsRequest):
     """
     ตรวจสอบห้องว่างและคำนวณราคาให้ AI Voice Bot นำ speech_text ไปพูดกับลูกค้าทันที
@@ -176,7 +178,7 @@ def voice_check_rooms(req: VoiceCheckRoomsRequest):
             "speech_text": "ขออภัยค่ะ ระบบตรวจสอบห้องพักขัดข้องชั่วคราว รบกวนลองใหม่อีกครั้งค่ะ"
         }
 
-@router.post("/book-room", response_model=VoiceBookRoomResponse)
+@router.post("/book-room", response_model=VoiceBookRoomResponse, dependencies=[Depends(verify_voice_api_key)])
 def voice_book_room(req: VoiceBookRoomRequest):
     """
     ยืนยันการจองผ่าน AI Voice Bot และออกรหัสการจอง (HTL-XXXX)
@@ -254,7 +256,7 @@ def voice_book_room(req: VoiceBookRoomRequest):
             "error": str(e)
         }
 
-@router.post("/save-log", response_model=VoiceSaveLogResponse)
+@router.post("/save-log", response_model=VoiceSaveLogResponse, dependencies=[Depends(verify_voice_api_key)])
 def voice_save_log(req: VoiceSaveLogRequest):
     """
     บันทึกประวัติการโทร ทรานสคริปต์ และ Intent สกัดจาก Botnoi Voice Bot ลงตาราง call_logs
