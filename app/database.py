@@ -1,9 +1,28 @@
 import re
 import uuid
 import secrets
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from app.config import settings
+
+THAI_TZ = timezone(timedelta(hours=7))
+
+
+def thai_today() -> date:
+    return datetime.now(THAI_TZ).date()
+
+
+def thai_date_str(value: Any) -> str:
+    """Calendar date in Thailand for an ISO timestamp, or '' when it cannot be parsed."""
+    text = str(value or "")
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return str(parsed.astimezone(THAI_TZ).date())
+
 
 # ------------------------------------------------------------------------------
 # DEFAULT SEED DATA (PHYSICAL INVENTORY: 10 ROOMS ACROSS 4 FLOORS)
@@ -242,7 +261,7 @@ class DatabaseService:
                 print(f"[DB Error: get_room_live_status] {e}")
 
         # Local view simulation
-        today = date.today()
+        today = thai_today()
         type_map = {rt["id"]: rt for rt in self._room_types}
         result = []
 
@@ -639,7 +658,7 @@ class DatabaseService:
         maintenance = sum(1 for r in live_grid if r["current_status"] == "maintenance")
         occupancy_rate = round((occupied / total_rooms * 100), 1) if total_rooms > 0 else 0.0
 
-        today_str = str(date.today())
+        today_str = str(thai_today())
 
         if self.is_supabase_connected:
             try:
@@ -647,12 +666,12 @@ class DatabaseService:
                 all_b = b_res.data or []
                 today_bookings = [
                     b for b in all_b 
-                    if str(b.get("created_at", "")).startswith(today_str)
+                    if thai_date_str(b.get("created_at")) == today_str
                 ]
                 revenue_today = sum(
                     float(b["total_price"]) 
                     for b in all_b 
-                    if b.get("payment_status") == "completed" and str(b.get("paid_at") or "").startswith(today_str)
+                    if b.get("payment_status") == "completed" and thai_date_str(b.get("paid_at")) == today_str
                 )
                 return {
                     "total_rooms": total_rooms,
@@ -669,13 +688,13 @@ class DatabaseService:
 
         today_bookings = [
             b for b in self._bookings 
-            if b.get("created_at", "").startswith(today_str)
+            if thai_date_str(b.get("created_at")) == today_str
         ]
         
         revenue_today = sum(
             float(b["total_price"]) 
             for b in self._bookings 
-            if b.get("payment_status") == "completed" and (b.get("paid_at") or "").startswith(today_str)
+            if b.get("payment_status") == "completed" and thai_date_str(b.get("paid_at")) == today_str
         )
 
         return {
