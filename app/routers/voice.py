@@ -12,6 +12,7 @@ from app.schemas import (
     VoiceBookRoomRequest,
     VoiceBookRoomResponse,
     VoiceSaveLogRequest,
+    VoiceBookingLogRequest,
     VoiceSaveLogResponse,
     VoiceCallTokenResponse
 )
@@ -275,3 +276,22 @@ def voice_save_log(req: VoiceSaveLogRequest):
         "log_id": log["id"],
         "message": "Call log saved successfully"
     }
+
+
+@router.post("/booking-log", response_model=VoiceSaveLogResponse)
+def save_booking_log(req: VoiceBookingLogRequest):
+    """
+    บันทึกบทสนทนาของสายที่จองสำเร็จ เรียกจากเบราว์เซอร์ ไม่ใช้ key ลับ
+    ยืนยันด้วยรหัสจอง + เบอร์โทรที่ตรงกับการจองจริง และเก็บได้ 1 log ต่อ 1 การจอง (ส่งซ้ำ = แทนที่)
+    """
+    booking = db.get_booking_by_code_and_phone(req.booking_code, req.guest_phone)
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบการจองที่ตรงกับรหัสและเบอร์โทรศัพท์นี้")
+    log = db.upsert_booking_call_log(
+        booking_id=booking["id"],
+        caller_phone=booking.get("guest_phone"),
+        session_id=req.session_id,
+        duration_seconds=req.duration_seconds,
+        messages=[m.model_dump() for m in req.messages],
+    )
+    return {"saved": True, "log_id": log.get("id"), "message": "Booking call log saved"}

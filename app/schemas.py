@@ -177,6 +177,19 @@ class VoiceSaveLogRequest(BaseModel):
     confidence_score: Optional[float] = None
     booking_id: Optional[str] = None
 
+class BookingLogMessage(BaseModel):
+    speaker: Literal["bot", "user"]
+    text: str = Field(..., max_length=2000)
+    timestamp: Optional[str] = Field(None, max_length=40)
+
+class VoiceBookingLogRequest(BaseModel):
+    """Transcript sent by the browser after a call that ended with a booking."""
+    booking_code: str = Field(..., max_length=40)
+    guest_phone: str = Field(..., max_length=40)
+    session_id: str = Field(..., max_length=100)
+    duration_seconds: int = Field(0, ge=0, le=86400)
+    messages: List[BookingLogMessage] = Field(..., min_length=1, max_length=200)
+
 class VoiceSaveLogResponse(BaseModel):
     saved: bool
     log_id: Optional[str] = None

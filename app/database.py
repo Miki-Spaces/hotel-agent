@@ -627,20 +627,66 @@ class DatabaseService:
         self._call_logs.insert(0, record)
         return record
 
+    def upsert_booking_call_log(
+        self,
+        booking_id: str,
+        caller_phone: Optional[str],
+        session_id: str,
+        duration_seconds: int,
+        messages: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """One log per booking: replace the existing row for this booking, otherwise insert."""
+        fields = {
+            "session_id": session_id,
+            "caller_phone": caller_phone,
+            "duration_seconds": duration_seconds,
+            "messages": messages,
+            "intent_data": {},
+            "confidence_score": None,
+            "booking_id": booking_id,
+        }
+
+        if self.is_supabase_connected:
+            try:
+                existing = self.client.table("call_logs").select("id").eq("booking_id", booking_id).limit(1).execute()
+                if existing.data:
+                    res = self.client.table("call_logs").update(fields).eq("id", existing.data[0]["id"]).execute()
+                else:
+                    res = self.client.table("call_logs").insert({"id": str(uuid.uuid4()), **fields}).execute()
+                if res.data:
+                    return res.data[0]
+            except Exception as e:
+                print(f"[DB Error: upsert_booking_call_log] {e}")
+                raise
+
+        for log in self._call_logs:
+            if log.get("booking_id") == booking_id:
+                log.update(fields)
+                return log
+        record = {"id": str(uuid.uuid4()), **fields, "created_at": datetime.now(timezone.utc).isoformat()}
+        self._call_logs.insert(0, record)
+        return record
+
     def get_call_logs(self, session_id: Optional[str] = None, caller_phone: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
         if self.is_supabase_connected:
             try:
-                q = self.client.table("call_logs").select("*")
+                q = self.client.table("call_logs").select("*, bookings(booking_code)")
                 if session_id:
                     q = q.eq("session_id", session_id)
                 if caller_phone:
                     q = q.eq("caller_phone", caller_phone)
                 res = q.order("created_at", desc=True).limit(limit).execute()
-                return res.data
+                rows = []
+                for row in res.data or []:
+                    rel = row.pop("bookings", None)
+                    row["booking_code"] = rel.get("booking_code") if isinstance(rel, dict) else None
+                    rows.append(row)
+                return rows
             except Exception as e:
                 print(f"[DB Error: get_call_logs] {e}")
 
-        filtered = self._call_logs
+        codes = {b["id"]: b["booking_code"] for b in self._bookings}
+        filtered = [{**l, "booking_code": codes.get(l.get("booking_id"))} for l in self._call_logs]
         if session_id:
             filtered = [l for l in filtered if l["session_id"] == session_id]
         if caller_phone:
